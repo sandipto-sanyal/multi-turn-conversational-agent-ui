@@ -92,6 +92,10 @@ export default function VoiceBot() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastUtterance, setLastUtterance] = useState<string | null>(null);
+  const [transcripts, setTranscripts] = useState<
+    { recordStartRef: string; text: string }[]
+  >([]);
+  const [transcription, setTranscription] = useState<string>("");
 
   // Live resources live in refs so the audio callbacks always see current values.
   const wsRef = useRef<WebSocket | null>(null);
@@ -188,6 +192,20 @@ export default function VoiceBot() {
       const ws = new WebSocket(toWsUrl(wsBase));
       wsRef.current = ws;
 
+      ws.onmessage = (event: MessageEvent) => {
+        console.log("ws onmessage:", event.data);
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === "transcribe_audio" && typeof msg.text === "string") {
+            setTranscripts((prev) => [
+              ...prev,
+              { recordStartRef: msg.recordStartRef, text: msg.text },
+            ]);
+          }
+        } catch {
+          // Non-JSON message (e.g. the backend's "bye"); ignore.
+        }
+      };
       ws.onerror = () => {
         setError("WebSocket connection failed.");
         setStatus("error");
@@ -244,6 +262,20 @@ export default function VoiceBot() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 2️⃣ Reattach onmessage whenever relevant state changes
+  useEffect(() => {
+    debugger
+    const ws = wsRef.current
+    if (!ws) return;
+
+    ws.onmessage = (event: MessageEvent<string>) => {
+        debugger
+      const data = JSON.parse(event.data)
+      console.log(data)
+    };
+  }, []); // ✅ only reattaches handler, no reconnect
+
+
   const active = status === "listening" || status === "speaking";
   const busy = status === "connecting";
 
@@ -281,6 +313,17 @@ export default function VoiceBot() {
         <p className="text-xs text-gray-500">
           Last utterance started at {lastUtterance}
         </p>
+      )}
+
+      {transcripts.length > 0 && (
+        <ul className="flex w-full flex-col gap-2">
+          {transcripts.map((t, i) => (
+            <li key={`${t.recordStartRef}-${i}`} className="rounded border p-3">
+              <p className="text-xs text-gray-500">{t.recordStartRef}</p>
+              <p className="text-base">{t.text}</p>
+            </li>
+          ))}
+        </ul>
       )}
     </main>
   );
